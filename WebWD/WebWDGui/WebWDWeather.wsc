@@ -1,0 +1,540 @@
+﻿<?xml version="1.0" ?>
+<package>
+	<comment>
+<![CDATA[
+'tabs=4
+-----------------------------------------------------------------------------------------
+
+ACP Weather Access Template (Started for Boltwood File based Weather Server)
+===========================
+
+    Script:         BrewWeather.wsc        based on BoltwoodFile.wsc
+Author:         Robert B. Denny <rdenny@dc3.com>
+                Modified by Brew
+Version:        1.0
+Requires:       ACP 7.2 or later
+Windows Script 5.6 or later (installed by ACP setup)
+
+Environment:    This is a Windows Script Component. Once registered (with regsvr32) it
+provides ACP and its scripts with Weather information. This component
+is responsible for providing the interface with the weather sensor. You
+May use the ASCOM Serial device to communicate via RS-232 or if the 
+weather sensor has an ActiveX/Scriptable interface, you may create an
+instance of the object, and call directly into that interface.
+                
+If you don//t have a copy of PrimalScript, I STRONGLY suggest you get it 
+and use it to work with this WSC.
+                
+    http://www.primalscript.com/
+                
+    Usage:          Replace the stubbed out properties and methods here with the code needed
+to implement each for your specific weather sensor. 
+                
+To write to the ACP console, call Util.Console.PrintLine(). 
+                
+THE MOST IMPORTANT PROPERTY IS "SAFE". RETURN TRUE UNLESS THE WEATHER
+IS SUCH THAT IT PRESENTS A HAZARD TO YOUR OBSERVATORY (SUCH AS RAIN
+LIGHTNING, OR WIND).
+                
+PLEASE NOTE:    ACP has a built-in facility for running custom scripts at the time it
+it is started up and shutdown. See the ACP helpfile, "Customizing the
+Program" for more info on startup and shutdown scripts.
+
+Edit History:
+21-May-15   Brew initial edit. Converted from vb to jscript
+-----------------------------------------------------------------------------------------
+]]>
+</comment>
+<component id="ACP.WebWD">
+<?component error="true" debug="true" ?>
+<registration progid="ACP.WebWD" classid="{8D1CF8DC-F58D-4868-9889-30AA39F54E12}" description="Brew weather server combining WeatherDisplay and web data" remotable="no" version="1.0">
+</registration>
+<public>
+<method name="SetupDialog">
+</method>
+<property name="Connected">
+<get/>
+<put/>
+</property>
+<property name="AmbientTemperature">
+<get/>
+</property>
+<property name="BarometricPressure">
+<get/>
+</property>
+<property name="Clouds">
+<get/>
+</property>
+<property name="DewPoint">
+<get/>
+</property>
+<property name="InsideTemperature">
+<get/>
+</property>
+<property name="Name">
+<get/>
+</property>
+<property name="Precipitation">
+<get/>
+</property>
+<property name="RelativeHumidity">
+<get/>
+</property>
+<property name="Safe">
+<get/>
+</property>
+<property name="WindDirection">
+<get/>
+</property>
+<property name="WindVelocity">
+<get/>
+</property>
+</public>
+<object id="FileDialog" progid="ACP.FileDialog" events="false" reference="true"/>
+<object id="Util" progid="ACP.Util" events="false" reference="true"/>
+<object id="FSO" progid="Scripting.FileSystemObject" events="false" reference="false"/>
+<script id="ACP.WebWD" language="jscript">
+<![CDATA[
+
+//<script type="text/javascript" src="json.js"></script>
+
+"use strict";             // like option explicit
+
+var ERR_SOURCE = "WebWD.Weather ";
+var PRP = "Property ";				// Common bits for error messages
+var NTI = " is not implemented";
+//
+// Polling interval, do not read file more often than this
+//
+var POLL_INT = 30;              // seconds for poll
+
+//
+// Manifest constants from Clarity II
+//
+var cloudUnknown = 0;
+var cloudClear = 1;
+var cloudCloudy = 2;
+var cloudVeryCloudy = 3;
+
+var windUnknown = 0;
+var windCalm = 1;
+var windWindy = 2;
+var windVeryWindy = 3;
+
+var rainUnknown = 0;
+var rainDry = 1;
+var rainWet = 2;      //sensor has water on it
+var rainRain = 3;     //falling rain drops detected
+
+//
+// State variables
+//
+var c_sWDDataFilePath = "C:\\Users\\robert\\Dropbox\\BrewSky\\Programs\\BrewWeatherServer\\WebWD\\WebWDGui\\daily.txt";                                          // Full path/name of WD data file
+var c_bConnected = false;
+var nowTime = new Date();
+var c_dtLastPollTime= nowTime - POLL_INT;
+var c_dtLastLogTime;                   
+var c_fAmbientTemp = 0;
+var c_fInsideTemp = 0;
+var c_fBarometricPressure = 0;
+var c_fWindSpeed = 0;
+var c_fWindDirection = 0;
+var c_fHumidity = 0;
+var c_fDewPoint = 0;
+var c_fCloudFrac = 0;               // fraction of clouds 0..1
+var c_iCloudCond = cloudUnknown;              // constant from above?
+var c_iWindCond = windUnknown;               // wind constant from above
+var c_iRainCond = rainUnknown;
+var c_bLastSafe = false;               // Last safe state - true = safe false = unsafe
+
+
+//------------------------------------------------------------------------------
+// Method SetupDialog()
+//
+// Parameters:   (none)
+// Returns:      (nothing)
+//
+// Invokes the weather access setup dialog. I put in a file selection dialog,
+// courtesy of ACP//s Util object which you have use of automatically here.
+//------------------------------------------------------------------------------
+function SetupDialog(){
+
+    c_sWDDataFilePath = Util.Profile.GetValue("WeatherDisplayData", "\WXWDDataFile", "");  // Try for previous selection
+    if (c_sWDDataFilePath == "") {
+        FileDialog.InitialDirectory = "C:\Program Files (x86)\wdisplay\webfiles";
+    } else {
+        FileDialog.InitialDirectory = FSO.GetParentFolderName(c_sWDDataFilePath);
+    }
+
+    FileDialog.DialogTitle = "Select Weather Display Data file";
+    FileDialog.Filter = "Txt files (*.txt)|*.txt|All files (*.*)|*.*";
+    FileDialog.Flags = 4096;                                 // Guarantee file exists
+    if (FileDialog.ShowOpen()) {
+        c_sWDDataFilePath = FileDialog.FileName;
+        Util.Profile.WriteValue ("WeatherDisplayData", c_sWDDataFilePath, "\WXWDDataFile");
+    }
+        
+}
+
+//------------------------------------------------------------------------------
+// Property Connected (R/W, REQUIRED)
+//
+// true means weather sensor is connected and operating (Boolean). 
+// Set true to connect.
+//------------------------------------------------------------------------------
+function get_Connected(){
+    // Return true if connected, else false
+    return c_bConnected;
+}
+
+function put_Connected(newValue){
+    // Code to establish or terminate the connection
+    if (newValue) {                                        // Connecting
+        //c_sWDDataFilePath = Util.Profile.GetValue("WeatherDisplayData", "\WXWDDataFile", "");
+        //if (c_sWDDataFilePath == "") {
+        //    throw ERR_SOURCE + " Cannot connect - WeatherDisplay Data file has not been selected";
+        //}
+        PollWDFile();                                               // Get initial data for check and model
+        c_bConnected = true;
+    } else {
+        c_bConnected = false;
+    }
+}
+
+//------------------------------------------------------------------------------
+// Property AmbientTemperature (R/O, OPTIONAL)
+//
+// The ambient (outside) air temperature (Single, deg.C)
+//------------------------------------------------------------------------------
+function get_AmbientTemperature(){
+    PollWDFile();
+    return c_fAmbientTemp;
+}
+
+//------------------------------------------------------------------------------
+// Property BarometricPressure (R/O, OPTIONAL)
+//
+// The barometric pressure (Single, millibars)
+// NOTE: This must be in millibars, per international aviation weather reporting
+//       standards.
+//------------------------------------------------------------------------------
+function get_BarometricPressure(){
+    //throw ERR_SOURCE + PRP + "Get BarometricPressure" + NTI;
+    PollWDFile();
+    return c_fBarometricPressure;
+}
+
+//------------------------------------------------------------------------------
+// Property Clouds (R/O, OPTIONAL)
+//
+// Cloud coverage (Single, fractional 0-1)
+//------------------------------------------------------------------------------
+function get_Clouds(){
+    PollWDFile();
+  return c_fCloudFrac;
+}
+
+//------------------------------------------------------------------------------
+// Property DewPoint (R/O, OPTIONAL)
+//
+// The dew point temperature (Single, deg C)
+//------------------------------------------------------------------------------
+function get_DewPoint(){
+    PollWDFile();
+    return c_fDewPoint;
+}
+
+//------------------------------------------------------------------------------
+// Property InsideTemperature (R/O, OPTIONAL)
+//
+// The temperature inside the observatory (Single, deg C)
+//------------------------------------------------------------------------------
+function get_InsideTemperature(){
+    //throw ERR_SOURCE + PRP + "Get InsideTemperature" + NTI;
+    PollWDFile();
+    return c_fInsideTemp;
+}
+
+//------------------------------------------------------------------------------
+// Property Name (R/O, OPTIONAL)
+//
+// The display name of the weather system (String)
+//------------------------------------------------------------------------------
+function get_Name(){
+    //PollWDFile();
+    return "Acp.WebWD";
+}
+
+//------------------------------------------------------------------------------
+// Property Precipitation (R/O, OPTIONAL)
+//
+// True if precipitation is present (Boolean)
+//------------------------------------------------------------------------------
+function get_Precipitation(){
+    PollWDFile();
+    return (c_iRainCond == rainRain);
+}
+
+//------------------------------------------------------------------------------
+// Property RelativeHumidity (R/O, OPTIONAL)
+//
+// The relative humidity (Single, fractional 0-1)
+//------------------------------------------------------------------------------
+function get_RelativeHumidity(){
+    PollWDFile();
+    return c_fHumidity;
+}
+
+//------------------------------------------------------------------------------
+// Property Safe (R/O, REQUIRED)
+//
+// Return true when weather is safe, false when not. Returning false will
+// stop any ACP script in progress and cause alarm and shutdown processes
+// to be initiated.
+//------------------------------------------------------------------------------
+function get_Safe(){
+    // WARNING: TRAP ERRORS HERE! Raised error on Safe property will kill ACP!
+    var mySafe;
+    try {
+        PollWDFile();
+    } catch (ex) {
+        //Util.Console.PrintLine "Weather Unsafe! Weather Display data-file acquisition error:";
+        //Util.Console.PrintLine "  " + Err.Description;
+        get_Safe = false;
+        return;
+    }
+    
+    mySafe = (c_iRainCond != rainUnknown) && 
+    (c_iRainCond != rainRain) && 
+    (c_iWindCond >= 0) && 
+    (c_iWindCond != windVeryWindy); 
+    /********
+            if (!mySafe && c_bLastSafe) {                // if this is a change from safe to unsafe
+                Util.Console.PrintLine("Weather Display: Weather is unsafe!");
+                if(c_iRainCond == rainUnknown) {
+                    Util.Console.PrintLine("               Rain sensor is not ready or broken");
+                } else if(c_iRainCond == rainRain) {
+                            Util.Console.PrintLine("               Rain condition is Rainy");
+                } else if (c_iWindCond < 0) {
+                            Util.Console.PrintLine("               Wind sensor is not ready or broken");
+                } else if(c_iWindCond == windVeryWindy) {
+                            Util.Console.PrintLine("               WindCondition is Very Windy");
+                }
+            }
+            ***********/
+    
+c_bLastSafe = mySafe;
+return mySafe;
+}
+
+//------------------------------------------------------------------------------
+// Property WindDirection (R/O, OPTIONAL)
+//
+// The azimuth FROM which the wind is blowing (Single, deg. magnetic)
+// NOTE: This must be in degrees MAGNETIC, per international aviation weather 
+//       reporting standards.
+//------------------------------------------------------------------------------
+function get_WindDirection(){
+    //throw ERR_SOURCE + PRP + "Get WindDirection" + NTI;
+    PollWDFile();
+    return c_fWindDirection;
+}
+
+//------------------------------------------------------------------------------
+// Property WindVelocity (R/O, OPTIONAL)
+//
+// The wind velocity (Single, knots)
+//------------------------------------------------------------------------------
+function get_WindVelocity(){
+    PollWDFile();
+    return c_fWindSpeed;
+}
+
+// ===============
+// Local functions
+// ===============
+
+//-----------------------------------------------------------------------
+// function PollWebData()
+//
+// Access the web address to retrieve JSON data string describing weather here
+// Mainly I am looking for Cloud data
+//
+// web address:  http://api.openweathermap.org/data/2.5/weather?q=85194
+//
+// JSON format:
+// {"coord":{"lon":-111.63,"lat":32.9},
+//  "sys":{"message":0.1925,"country":"US","sunrise":1432556474,"sunset":1432607144},
+//  "weather":[{"id":800,"main":"Clear","description":"Sky is Clear","icon":"01n"}],
+//  "base":"stations",
+//  "main":{"temp":287.532,"temp_min":287.532,"temp_max":287.532,"pressure":965.19,"sea_level":1024.15,"grnd_level":965.19,"humidity":53},
+//  "wind":{"speed":1.46,"deg":1.50717},
+//  "clouds":{"all":0},
+//  "dt":1432536437,
+//  "id":0,
+//  "name":"Casa Grande",
+//  "cod":200}
+function PollWebData(){
+    Util.Console.PrintLine("Create Request");
+    try {
+        //var xmlhttp = new XMLHttpRequest();
+        var xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+    } catch (ex) {
+        throw "Create XMLHttpRequest failed " + ex.messsage;
+    }
+    var url = "http://api.openweathermap.org/data/2.5/weather?q=85194";
+
+    xmlhttp.onreadystatechange = function() {
+        if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+            try {
+                var respTxt = xmlhttp.responseText;
+                var myData = eval("(" + respTxt + ")");
+            } catch (ex) {
+                throw "JSONparse failed " + ex.message + "JSON data " + respTxt;
+            }
+            myFunction(myData);
+        }
+    }
+    try {
+        xmlhttp.open("GET", url, true);
+    } catch (ex) {
+        throw "xmlhttp open failed " + ex.message;
+    }
+    try {
+        xmlhttp.send();
+    } catch (ex) {
+        throw "xmlhttp send failed " + ex.message;
+    }
+
+
+}
+
+function myFunction(theData) {
+    var cloudInfo = theData.clouds;
+    c_fCloudFrac = cloudInfo.all / 100.0;
+    Util.Console.PrintLine("Clouds.all is " + c_fCloudFrac);
+    c_iCloudCond = cloudUnknown;
+    if (c_fCloudFrac < 0.15) { c_iCloudCond = cloudClear;}
+    else if (c_fCloudFrac < 0.5) {c_iCloudCond = cloudCloudy;}    
+    else if (c_fCloudFrac <= 1.0) {c_iCloudCond = cloudVeryCloudy;}  
+}
+
+//------------------------------------------------------------------------------
+// function PollWDFile()
+//
+// if the poll time has expired, attempt to read the one line from the WeatherDisplay 
+// data file. if it is locked, wait 500ms and try again. Try 10 times { fail. 
+// if succeeded, update the "last poll time". Then parse the file 
+// ---------------------------------------------------------------------------------------------------
+// File contains 4 lines
+//   05/24/15
+//   Time Wind Dir Wind Spd Hum In Humidity Temp In Temp Raw Barom Temp Ch 1 Hum Ch 1 Temp Ch 2 Hum Ch 2 Temp Ch 3 Hum Ch 3 Dew Point RainRate
+//   ° mph % % °F °F in °F % °F % °F % °F in/hr
+//   01:37 AM 330 0.0 27 46 72.2 62.3 101.6 0.0 0 0.0 0 0.0 0 41.2 0.00
+//-- Adjusted info for clarity -------------------------------------------
+//            °   mph %  %  °F   °F   in    °F  % °F  % °F  % °F   in/hr
+//   0     1  2   3   4  5  6    7    8     9   10 11 12 13 14 15  16
+//
+// Raises error if something isn//t right
+//------------------------------------------------------------------------------
+function PollWDFile(){
+    var S, i, valBits, unitBits, mph, faren, RX;
+    var buf1, buf2, buf3, buf4;
+    var curTime = new Date();
+    if ((curTime - c_dtLastPollTime) < POLL_INT) {     // Too soon, use previous data
+        //Util.Console.PrintLine("    using prev data");
+        return;
+    }
+    
+    if (! FSO.FileExists(c_sWDDataFilePath)) {              // Catch vaporized WD file
+        throw ERR_SOURCE + "PollWDFile: The WeatherDisplay data file doesn//t exist!";
+    }
+    
+    for (i = 0; i <10; i++) {                             // Try twice a sec. for 5 sec.
+        try {
+            S = FSO.OpenTextFile(c_sWDDataFilePath, 1);
+            break;
+        } catch(ex) {
+            Util.Console.PrintLine("Cant open yet");
+            HardSleep(500);
+        }
+    }
+        
+    if (i >= 10) { 
+        throw ERR_SOURCE + "PollWDFile: Failed to open WeatherDisplay data file";
+    }
+    //
+    // OK We have the file open. Read the data lines
+    //
+    buf1 = S.ReadLine();
+    buf2 = S.ReadLine();
+    buf3 = S.ReadLine();
+    buf4 = S.ReadLine();
+    S.Close();                                               // And close it right away
+
+    c_dtLastPollTime = curTime;                                  // Update last poll time
+    
+    //
+    // Interpret log file. Detect old/new format
+    //
+    //buf = buf.replace(/ +/, " ");                          // Compress runs of whitgespace
+    unitBits = buf3.split(" ");                                  // Now just split on space
+    valBits = buf4.split(" ");                                  // Now just split on space
+    
+    if (valBits.length > 16) {                               // good format - should have 17 fields
+        faren = true;                                        
+        mph = true;                                          
+        c_fAmbientTemp = parseFloat(valBits[7]);
+                //if faren {                                       // Convert F to C if needed
+                //    c_fAmbientTemp = (c_fAmbientTemp - 32) * 5 / 9;
+                //}
+        c_fInsideTemp = parseFloat(valBits[6]);
+        c_fWindSpeed = parseFloat(valBits[3]);
+        c_fWindDirection = parseFloat(valBits[2]);
+        c_fBarometricPressure = parseFloat(valBits[8]) * 10.0;   // convert to millibars
+                //if mph {
+                //    c_fWindSpeed = 0.8688 * c_fWindSpeed;            // Convert miles/hr to knots
+                //else
+                //    c_fWindSpeed = 0.5400 * c_fWindSpeed;            // Convert km/hr to knots
+                //}
+        c_fHumidity = parseFloat(valBits[5]) / 100;                   // Humidity, frac (0-1)
+        c_fDewPoint = parseFloat(valBits[15]);                         // Dew point temp
+                //if faren {                                       // Convert F to C if needed
+                //    c_fDewPoint = (c_fDewPoint - 32) * 5 / 9;
+                //}
+        var datestr = buf1.substr(0,6) + "20" + buf1.substr(6,2) + " " + valBits[0] + ":00 " + valBits[1];
+        c_dtLastLogTime = new Date(datestr);
+        Util.Console.PrintLine("LastLogTime " + c_dtLastLogTime);
+        if (c_fWindSpeed >= 14) {c_iWindCond = windVeryWindy;}
+        else if (c_fWindSpeed >= 6) {c_iWindCond = windWindy;}
+        else {c_iWindCond = windCalm;}
+        
+        var rainRate = parseFloat(valBits[16]);
+        if (rainRate > 0) {
+            c_iRainCond = rainRain;
+        } else {
+            c_iRainCond = rainDry;
+        }
+    } else  {                                                  // Some sort of bogus data line
+        throw ERR_SOURCE + "PollWDFile: WeatherDisplay data file does not contain valid data";
+    }
+ 
+    
+    //if ((curTime - c_dtLastLogTime) > 30)  {
+    //    throw ERR_SOURCE + "PollWDFile: Weather Display has not sent data for at least 30 seconds";
+    //}
+    PollWebData();
+}
+
+// function to emulate sleep().
+// Yes, it is a bad way, will peg CPU
+// pass in delay in msec
+function HardSleep(delay){
+    var start = new Date().getTime();
+    while (new Date().getTime() < (start + delay));
+}
+
+]]>
+</script>
+</component>
+</package>

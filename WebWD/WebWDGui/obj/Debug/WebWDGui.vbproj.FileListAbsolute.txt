@@ -1,0 +1,2 @@
+C:\Users\robert\Dropbox\BrewSky\Programs\BrewWeatherServer\WebWD\WebWDGui\bin\Debug\WebWDGui.exe.config
+C:\Users\Brew\Dropbox\BrewSky\Programs\BrewWeatherServer\WebWD\WebWDGui\bin\Debug\WebWDGui.exe.config

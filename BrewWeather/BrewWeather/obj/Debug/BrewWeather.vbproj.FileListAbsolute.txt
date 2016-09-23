@@ -1,0 +1,4 @@
+C:\Users\erida\Dropbox\BrewSky\Programs\BrewWeatherServerorig\BrewWeather\BrewWeather\bin\Debug\BrewGemini.exe.config
+C:\Users\erida\Dropbox\BrewSky\Programs\BrewWeatherServerorig\BrewWeather\BrewWeather\obj\Debug\BrewGemini.exe
+C:\Users\erida\Dropbox\BrewSky\Programs\BrewWeatherServerorig\BrewWeather\BrewWeather\obj\Debug\BrewGemini.xml
+C:\Users\erida\Dropbox\BrewSky\Programs\BrewWeatherServerorig\BrewWeather\BrewWeather\obj\Debug\BrewGemini.pdb

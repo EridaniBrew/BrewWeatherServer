@@ -1,0 +1,303 @@
+%metarcloudreport% .........cloud METAR label from the metar.gif
+%cloudheightfeet%...........Estimated cloud base height, feet
+%vpforecasttext%............Forecast text from the Davis VP
+%downloadedmetar1extrasky%.Sky conditions
+%downloadedmetar1sky%......More sky conditions
+%downloadedmetar1cloud%....Cloud conditions or weather
+%downloadedmetar1location%.Metar name and time stamp
+forecasticon.gif ............The icon you can see visible on the WD 
+screen
+forecasticonstation.gif......The icon that the weather station has 
+visible
+
+%usnavycloudheight1%
+Cloud height from the ceilometer (feet)
+%usnavycloudheight2%
+Cloud height from the ceilometer (feet)
+%usnavycloudheight3%
+Cloud height from the ceilometer (feet)
+%usnavycloudtype1%
+Cloud type
+%usnavycloudtype2%
+Cloud type
+%usnavycloudtype3%
+Cloud type
+
+
+http://openweathermap.org/current
+ api.openweathermap.org/data/2.5/weather?q=London,uk
+
+{"coord":{"lon":-0.13,"lat":51.51},"sys":{"message":0.0177,"country":"GB","sunrise":1432180785,"sunset":1432238067},"weather":[{"id":801,"main":"Clouds","description":"few clouds","icon":"02d"}],"base":"stations","main":{"temp":281.175,"temp_min":281.175,"temp_max":281.175,"pressure":1031.43,"sea_level":1039.5,"grnd_level":1031.43,"humidity":74},"wind":{"speed":2.17,"deg":239.5},"clouds":{"all":20},"dt":1432182686,"id":2643743,"name":"London","cod":200}
+
+
+
+vb.NET generate Guid
+
+System.Guid.NewGuid().ToString()
+
+
+http://www.codeproject.com/Articles/3511/Exposing-NET-Components-to-COM
+
+
+<HTML>
+<HEAD>
+<SCRIPT LANGUAGE= "JavaScript1.2">
+function getPage() {
+  // the file to be read
+  pageURL = new
+      java.net.URL
+        ("http://www.yourserver.com/yoyrpage.html");
+
+  // step 1, open the URL
+  var openConnection = pageURL.openConnection;
+  theConnection = openConnection()
+
+  // step 2, connect to server
+  var t=theConnection.connect
+  t()
+
+  // step 3, read the file using HTTP protocol
+  var getContent = theConnection.getContent
+  var theURLStream = getContent()
+
+  // step 4, get an handle and fetch the content length
+  var readStream = theURLStream.read
+  var gcl = theConnection.getContentLength
+  gcLen = gcl()
+
+  // and finally, read into a variable
+  theText =""
+  for (i = 1; i <gcLen; i++) {
+   theText += new java.lang.Character(readStream())
+   }
+
+  // for demonstration
+  alert(theText)
+}
+</SCRIPT>
+</HEAD>
+
+<BODY>
+<FORM>
+<INPUT TYPE="button" VALUE="get page" onClick="getPage();">
+</FORM>
+</BODY>
+</HTML>
+
+
+
+<script>
+var xmlhttp = new XMLHttpRequest();
+var url = "myTutorials.txt";
+
+xmlhttp.onreadystatechange = function() {
+    if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+        var myArr = JSON.parse(xmlhttp.responseText);
+        myFunction(myArr);
+    }
+}
+xmlhttp.open("GET", url, true);
+xmlhttp.send();
+
+function myFunction(arr) {
+    var out = "";
+    var i;
+    for(i = 0; i < arr.length; i++) {
+        out += '<a href="' + arr[i].url + '">' +
+        arr[i].display + '</a><br>';
+    }
+    document.getElementById("id01").innerHTML = out;
+}
+</script>
+
+
+
+Sample IE gui stuff
+Function IEButtons( )
+    ' This function uses Internet Explorer to create a dialog.
+    Dim objIE, sTitle, iErrorNum
+
+    ' Create an IE object
+    Set objIE = CreateObject( "InternetExplorer.Application" )
+    ' specify some of the IE window's settings
+    objIE.Navigate "about:blank"
+    sTitle="Make your choice " & String( 80, "." ) 'Note: the String( 80,".") is to push "Internet Explorer" string off the window
+    objIE.Document.title = sTitle
+    objIE.MenuBar        = False
+    objIE.ToolBar        = False
+    objIE.AddressBar     = false
+    objIE.Resizable      = False
+    objIE.StatusBar      = False
+    objIE.Width          = 250
+    objIE.Height         = 280
+    ' Center the dialog window on the screen
+    With objIE.Document.parentWindow.screen
+        objIE.Left = (.availWidth  - objIE.Width ) \ 2
+        objIE.Top  = (.availHeight - objIE.Height) \ 2
+    End With
+    ' Wait till IE is ready
+    Do While objIE.Busy
+        WScript.Sleep 200
+    Loop
+    
+
+    ' Insert the HTML code to prompt for user input
+    objIE.Document.body.innerHTML = "<div align=""center"">" & vbcrlf _
+                                  & "<p><input type=""hidden"" id=""OK"" name=""OK"" value=""0"">" _
+                                  & "<input type=""submit"" value=""  Limited User   "" onClick=""VBScript:OK.value=1""></p>" _
+                                  & "<input type=""submit"" value=""  Standard User "" onClick=""VBScript:OK.value=2""></p>" _
+                                  & "<input type=""submit"" value=""   Power User   "" onClick=""VBScript:OK.value=4""></p>" _
+                                  & "<input type=""submit"" value=""   Admin User   "" onClick=""VBScript:OK.value=8""></p>" _
+                                  & "<p><input type=""hidden"" id=""Cancel"" name=""Cancel"" value=""0"">" _
+                                  & "<input type=""submit"" id=""CancelButton"" value=""       Cancel       "" onClick=""VBScript:Cancel.value=-1""></p></div>"
+
+    ' Hide the scrollbars
+    objIE.Document.body.style.overflow = "auto"
+    ' Make the window visible
+    objIE.Visible = True
+    ' Set focus on Cancel button
+    objIE.Document.all.CancelButton.focus
+
+
+    'CAVEAT: If user click red X to close IE window instead of click cancel, an error will occur.
+    '        Error trapping Is Not doable For some reason
+    On Error Resume Next
+    Do While objIE.Document.all.OK.value = 0 and objIE.Document.all.Cancel.value = 0
+        WScript.Sleep 200
+        iErrorNum=Err.Number
+        If iErrorNum <> 0 Then    'user clicked red X (or alt-F4) to close IE window
+            IEButtons = 0
+            objIE.Quit
+            Set objIE = Nothing
+            Exit Function
+        End if
+    Loop
+    On Error Goto 0
+
+    objIE.Visible = False
+
+    ' Read the user input from the dialog window
+    IEButtons = objIE.Document.all.OK.value
+    ' Close and release the object
+    objIE.Quit
+    Set objIE = Nothing
+End Function
+
+
+
+ProgressBar listings  - see http://windowsitpro.com/scripting/scripting-solutions-wsh-and-com-using-wsc-build-progress-bar-dialog-box-part-4
+html file
+' Listing 1. Progress.htm
+
+<HTML>
+<HEAD>
+<TITLE> Progress Bar </TITLE>
+</HEAD>
+<BODY bgcolor="Silver" text="Black">
+<CENTER>
+' BEGIN CALLOUT A
+<h3 id=ProgressBarTitle>X</h3>
+' END CALLOUT A
+' BEGIN CALLOUT B
+<OBJECT ID="ProgressBar" WIDTH=350 HEIGHT=22 CLASSID="CLSID:8BD21D10-EC42-11CE-9E0D-00AA006002F3">
+	<PARAM NAME="VariousPropertyBits" VALUE="746604571">
+	<PARAM NAME="ForeColor" VALUE="2147483650">
+	<PARAM NAME="BackColor" VALUE="2147483663">
+	<PARAM NAME="Value" VALUE="">
+	<PARAM NAME="FontName" VALUE="Wingdings">
+	<PARAM NAME="FontHeight" VALUE="200">
+	<PARAM NAME="FontCharSet" VALUE="2">
+</OBJECT>
+</CENTER>
+' END CALLOUT B
+' BEGIN CALLOUT C 
+<form name='SecretForm'>
+	<input type='hidden' name='strHiddenValue' value=''>
+</form>
+
+<SCRIPT LANGUAGE='VBScript'>
+Sub SetAlertThatCancelHasBeenPressed()
+	SecretForm.strHiddenValue.Value = "cancel"
+End Sub
+</SCRIPT>
+
+<P><input type='button' value='Cancel' onclick='SetAlertThatCancelHasBeenPressed()'></P>
+' END CALLOUT C
+' BEGIN CALLOUT D
+<h4 id=ProgressBarLine1>Y</h4>
+<h4 id=ProgressBarLine2>Z</h4>
+' END CALLOUT D
+</BODY>
+</HTML>
+
+
+Skeleton of wsc file
+' Listing 2. An Example of a Fully Featured File
+
+<package>
+	<component id="ProgressDialogBox">
+		<?component error="false" debug="false" ?>
+		<registration 
+			progid="PROGRESSDIALOGBOX.WSC"
+			classid="{342194A4-9622-4674-BC21-402E2BAC4846}"
+			description="ProgressDialogBox"
+			remotable="false"
+			version="1.00"
+		>
+		</registration>
+		<public>
+			<property name="Visible">
+				<put/>
+			</property>
+			<property name="Line1">
+				<put/>
+			</property>
+			<property name="Line2">
+				<put/>
+			</property>
+			<property name="PercentComplete">
+				<put/>
+			</property>
+			<method internalname="OpenIE" name="Open">
+				<parameter name="strTitle"/>
+				<parameter name="intTop"/>
+				<parameter name="intLeft"/>
+				<parameter name="intHeight"/>
+				<parameter name="intWidth"/>
+			</method>
+			<method name="Close">
+			</method>
+			<event name="Cancel">
+			</event>
+		</public>
+		<script id="ProgressDialogBox" language="VBScript">
+
+function OpenIE(strTitle, intTop, intLeft, intHeight, intWidth)
+end function
+
+function Close()
+end function
+
+function put_Visible(newValue)
+	Visible = newValue
+end function
+
+function put_Line1(newValue)
+	Line1 = newValue
+end function
+
+function put_Line2(newValue)
+	Line2 = newValue
+end function
+
+function put_PercentComplete(newValue)
+	PercentComplete = newValue
+end function
+		</script>
+
+	</component>
+</package>
+
+
+
+microsoft out-of-process ActiveX.exe example: see VBexeCOMServer.exe

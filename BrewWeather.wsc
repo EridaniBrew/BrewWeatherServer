@@ -1,0 +1,465 @@
+<?xml version="1.0" ?>
+<package>
+	<comment>
+<![CDATA[
+'tabs=4
+-----------------------------------------------------------------------------------------
+
+ACP Weather Access Template (Started for Boltwood File based Weather Server)
+===========================
+
+Script:         BrewWeather.wsc        based on BoltwoodFile.wsc
+Author:         Robert B. Denny <rdenny@dc3.com>
+                Modified by Brew
+Version:        1.0
+Requires:       ACP 7.2 or later
+                Windows Script 5.6 or later (installed by ACP setup)
+
+Environment:    This is a Windows Script Component. Once registered (with regsvr32) it
+                provides ACP and its scripts with Weather information. This component
+                is responsible for providing the interface with the weather sensor. You
+                May use the ASCOM Serial device to communicate via RS-232 or if the 
+                weather sensor has an ActiveX/Scriptable interface, you may create an
+                instance of the object, and call directly into that interface.
+                
+                If you don't have a copy of PrimalScript, I STRONGLY suggest you get it 
+                and use it to work with this WSC.
+                
+                http://www.primalscript.com/
+                
+Usage:          Replace the stubbed out properties and methods here with the code needed
+                to implement each for your specific weather sensor. 
+                
+                To write to the ACP console, call Util.Console.PrintLine(). 
+                
+                THE MOST IMPORTANT PROPERTY IS "SAFE". RETURN TRUE UNLESS THE WEATHER
+                IS SUCH THAT IT PRESENTS A HAZARD TO YOUR OBSERVATORY (SUCH AS RAIN
+                LIGHTNING, OR WIND).
+                
+PLEASE NOTE:    ACP has a built-in facility for running custom scripts at the time it
+                it is started up and shutdown. See the ACP helpfile, "Customizing the
+                Program" for more info on startup and shutdown scripts.
+
+Edit History:
+    20-Sep-04   Initial Edit
+    06-Nov-06	Finish comments
+    07-Nov-08   From template, skeleton for Boltwood File (JAT Observatory Project)
+                New CLASSID!!!! Add some sample code to select the log fgile in the
+                SetupDialog, and connect/disconnect. 
+    16-May-11   GEM:641 - Fix unsafe logic (had old refs to CLOUD)
+    21-May-15   Brew initial edit
+-----------------------------------------------------------------------------------------
+]]>
+	</comment>
+	<component id="BrewWeather">
+		<?component error="false" debug="false" ?>
+		<registration progid="ACP.BrewWeather" classid="{FF6E96AD-4732-4ea6-A01E-43E77E939917}" description="Brew weather server combining WeatherDisplay and web data" remotable="no" version="1.0">
+		</registration>
+		<public>
+			<method name="SetupDialog">
+			</method>
+			<property name="Connected">
+				<get/>
+				<put/>
+			</property>
+			<property name="AmbientTemperature">
+				<get/>
+			</property>
+			<property name="BarometricPressure">
+				<get/>
+			</property>
+			<property name="Clouds">
+				<get/>
+			</property>
+			<property name="DewPoint">
+				<get/>
+			</property>
+			<property name="InsideTemperature">
+				<get/>
+			</property>
+			<property name="Name">
+				<get/>
+			</property>
+			<property name="Precipitation">
+				<get/>
+			</property>
+			<property name="RelativeHumidity">
+				<get/>
+			</property>
+			<property name="Safe">
+				<get/>
+			</property>
+			<property name="WindDirection">
+				<get/>
+			</property>
+			<property name="WindVelocity">
+				<get/>
+			</property>
+		</public>
+		<object id="FileDialog" progid="ACP.FileDialog" events="false" reference="true"/>
+		<object id="Util" progid="ACP.Util" events="false" reference="true"/>
+		<object id="FSO" progid="Scripting.FileSystemObject" events="false" reference="false"/>
+		<script id="WeatherAccess" language="VBScript">
+<![CDATA[
+
+Option Explicit
+
+Const ERR_SOURCE = "ACP.BrewWeather"
+Const PRP = "Property "				' Common bits for error messages
+Const NTI = " is not implemented"
+'
+' Polling interval, do not read file more often than this
+'
+Const POLL_INT = #00:00:15#
+
+'
+' Manifest constants from Clarity II
+'
+Const cloudUnknown = 0
+Const cloudClear = 1
+Const cloudCloudy = 2
+Const cloudVeryCloudy = 3
+Const windUnknown = 0
+Const windCalm = 1
+Const windWindy = 2
+Const windVeryWindy = 3
+Const rainUnknown = 0
+Const rainDry = 1
+Const rainWet = 2      'sensor has water on it
+Const rainRain = 3     'falling rain drops detected
+
+'
+' State variables
+'
+Dim c_sWDDataFilePath                                          ' Full path/name of WD data file
+Dim c_bBoltwoodII                     ' indicates bOLTWOOD ii FORMAT (ass opposed to boltwood I)
+Dim c_bConnected
+Dim c_dtLastPollTime
+Dim c_dtLastLogTime                   ' not used
+Dim c_iSecondsSinceData               ' not used
+Dim c_fAmbientTemp
+Dim c_fWindSpeed
+Dim c_fHumidity
+Dim c_fDewPoint
+Dim c_iCloudCond              ' constant from above?
+Dim c_iWindCond               ' wind constant from above
+Dim c_iRainCond
+Dim c_bLastSafe               ' Last safe state - True = safe false = unsafe
+
+'
+' Code outside of any Function or Sub is executed when this object is created.
+'
+c_sWDDataFilePath = ""
+c_bConnected = False
+c_dtLastPollTime = CDate(Now - POLL_INT)                   ' Force initial poll
+
+'------------------------------------------------------------------------------
+' Method SetupDialog()
+'
+' Parameters:   (none)
+' Returns:      (nothing)
+'
+' Invokes the weather access setup dialog. I put in a file selection dialog,
+' courtesy of ACP's Util object which you have use of automatically here.
+'------------------------------------------------------------------------------
+Sub SetupDialog()
+
+    c_sWDDataFilePath = Util.Profile.GetValue("WeatherDisplayData", "\WXWDDataFile", "") ' Try for previous selection
+    If c_sWDDataFilePath = "" Then
+        FileDialog.InitialDirectory = "C:\Program Files (x86)\wdisplay\webfiles"
+    Else
+        FileDialog.InitialDirectory = FSO.GetParentFolderName(c_sWDDataFilePath)
+    End If
+
+    FileDialog.DialogTitle = "Select Weather Display Data file"
+    FileDialog.Filter = "Txt files (*.txt)|*.txt|All files (*.*)|*.*"
+    FileDialog.Flags = 4096                                 ' Guarantee file exists
+    If FileDialog.ShowOpen() Then
+        c_sWDDataFilePath = FileDialog.FileName
+        Util.Profile.WriteValue "WeatherDisplayData", c_sWDDataFilePath, "\WXWDDataFile"
+    End If
+        
+End Sub
+
+'------------------------------------------------------------------------------
+' Property Connected (R/W, REQUIRED)
+'
+' True means weather sensor is connected and operating (Boolean). 
+' Set True to connect.
+'------------------------------------------------------------------------------
+' dim Connected									            ' PrimalScript UI target (typ.)
+Function get_Connected()
+    ' Return True if connected, else False
+	get_Connected = c_bConnected
+End Function
+
+Function put_Connected(newValue)
+    ' Code to establish or terminate the connection
+    If newValue Then                                        ' Connecting
+        c_sWDDataFilePath = Util.Profile.GetValue("WeatherDisplayData", "\WXWDDataFile", "")
+        If c_sWDDataFilePath = "" Then
+    	    Err.Raise &H80040401, ERR_SOURCE, "Cannot connect - WeatherDisplay Data file has not been selected"
+    	  End If
+    	  PollIf                                              ' Get initial data for check and model
+        c_bConnected = True
+    Else
+        c_bConnected = False
+    End If
+End Function
+
+'------------------------------------------------------------------------------
+' Property AmbientTemperature (R/O, OPTIONAL)
+'
+' The ambient (outside) air temperature (Single, deg.C)
+'------------------------------------------------------------------------------
+' Dim AmbientTemperature
+Function get_AmbientTemperature()
+    PollIf
+    get_AmbientTemperature = c_fAmbientTemp
+End Function
+
+'------------------------------------------------------------------------------
+' Property BarometricPressure (R/O, OPTIONAL)
+'
+' The barometric pressure (Single, millibars)
+' NOTE: This must be in millibars, per international aviation weather reporting
+'       standards.
+'------------------------------------------------------------------------------
+' Dim BarometricPressure
+Function get_BarometricPressure()
+	Err.Raise &H80040400, ERR_SOURCE, PRP & "Get BarometricPressure" & NTI
+End Function
+
+'------------------------------------------------------------------------------
+' Property Clouds (R/O, OPTIONAL)
+'
+' Cloud coverage (Single, fractional 0-1)
+'------------------------------------------------------------------------------
+' Dim Clouds
+Function get_Clouds()
+    PollIf
+	Select Case c_iCloudCond
+		Case cloudUnknown:
+			Err.Raise &H80040404, ERR_SOURCE, "No cloud data currently available"
+		Case cloudClear:
+			get_Clouds = 0.0
+		Case cloudCloudy:
+			get_Clouds = 0.5
+		Case cloudVeryCloudy:
+			get_Clouds = 1.0
+		Case Else:
+			Err.Raise &H80040405, ERR_SOURCE, "Unknown cloud value from Clarity"
+	End Select
+End Function
+
+'------------------------------------------------------------------------------
+' Property DewPoint (R/O, OPTIONAL)
+'
+' The dew point temperature (Single, deg C)
+'------------------------------------------------------------------------------
+' Dim DewPoint
+Function get_DewPoint()
+    PollIf
+    get_DewPoint = c_fDewPoint
+End Function
+
+'------------------------------------------------------------------------------
+' Property InsideTemperature (R/O, OPTIONAL)
+'
+' The temperature inside the observatory (Single, deg C)
+'------------------------------------------------------------------------------
+' Dim InsideTemperature
+Function get_InsideTemperature()
+	Err.Raise &H80040400, ERR_SOURCE, PRP & "Get InsideTemperature" & NTI
+End Function
+
+'------------------------------------------------------------------------------
+' Property Name (R/O, OPTIONAL)
+'
+' The display name of the weather system (String)
+'------------------------------------------------------------------------------
+' dim Name
+Function get_Name()
+    PollIf
+    get_Name = "Weather Display"
+End Function
+
+'------------------------------------------------------------------------------
+' Property Precipitation (R/O, OPTIONAL)
+'
+' True if precipitation is present (Boolean)
+'------------------------------------------------------------------------------
+' Dim Precipitation
+Function get_Precipitation()
+    PollIf
+    get_Precipitation = (c_iRainCond = rainRain)
+End Function
+
+'------------------------------------------------------------------------------
+' Property RelativeHumidity (R/O, OPTIONAL)
+'
+' The relative humidity (Single, fractional 0-1)
+'------------------------------------------------------------------------------
+' Dim RelativeHumidity
+Function get_RelativeHumidity()
+    PollIf
+    get_RelativeHumidity = c_fHumidity
+End Function
+
+'------------------------------------------------------------------------------
+' Property Safe (R/O, REQUIRED)
+'
+' Return True when weather is safe, False when not. Returning False will
+' stop any ACP script in progress and cause alarm and shutdown processes
+' to be initiated.
+'------------------------------------------------------------------------------
+' dim Safe
+Function get_Safe()
+    ' WARNING: TRAP ERRORS HERE! Raised error on Safe property will kill ACP!
+    On Error Resume Next
+    PollIf
+    If Err.Number <> 0 Then
+        Util.Console.PrintLine "Weather Unsafe! Weather Display data-file acquisition error:"
+        Util.Console.PrintLine "  " & Err.Description
+        get_Safe = False
+        Exit Function
+    End If
+    On Error GoTo 0
+    
+    	get_Safe = (Not c_iRainCond = rainUnknown) And _
+    				(Not c_iRainCond = rainRain) And _
+    				(Not c_iWindCond < 0) And _
+    				(Not c_iWindCond = windVeryWindy) And _
+    				c_iSecondsSinceData < 30
+    	If Not get_Safe And c_bLastSafe Then                ' If this is a change from safe to unsafe
+    		Util.Console.PrintLine("Weather Display: Weather is unsafe!")
+    		If(c_iRainCond = rainUnknown) Then
+    		    Util.Console.PrintLine("               Rain sensor is not ready or broken")
+    		ElseIf(c_iRainCond = rainRain) Then
+    		    Util.Console.PrintLine("               Rain condition is Rainy")
+    		ElseIf(c_iWindCond < 0) Then
+    		    Util.Console.PrintLine("               Wind sensor is not ready or broken")
+    		ElseIf(c_iWindCond = windVeryWindy) Then
+    		    Util.Console.PrintLine("               WindCondition is Very Windy")
+    		ElseIf(c_iSecondsSinceData >= 60) Then
+    		    Util.Console.PrintLine("               No data from WeatherDisplay for " & _
+    		  				CStr(c_iSecondsSinceData) & " sec.")
+    		End If
+    	End If
+    
+	c_bLastSafe = get_Safe
+	
+End Function
+
+'------------------------------------------------------------------------------
+' Property WindDirection (R/O, OPTIONAL)
+'
+' The azimuth FROM which the wind is blowing (Single, deg. magnetic)
+' NOTE: This must be in degrees MAGNETIC, per international aviation weather 
+'       reporting standards.
+'------------------------------------------------------------------------------
+' Dim WindDirection
+Function get_WindDirection()
+	Err.Raise &H80040400, ERR_SOURCE, PRP & "Get WindDirection" & NTI
+End Function
+
+'------------------------------------------------------------------------------
+' Property WindVelocity (R/O, OPTIONAL)
+'
+' The wind velocity (Single, knots)
+'------------------------------------------------------------------------------
+' Dim WindVelocity
+Function get_WindVelocity()
+    PollIf
+    get_WindVelocity = c_fWindSpeed
+End Function
+
+' ===============
+' Local Functions
+' ===============
+
+
+'------------------------------------------------------------------------------
+' Sub PollIf()
+'
+' If the poll time has expired, attempt to read the one line from the WeatherDisplay 
+' data file. If it is locked, wait 500ms and try again. Try 10 times then fail. 
+' If succeeded, update the "last poll time". Then parse the file 
+' ---------------------------------------------------------------------------------------------------
+'
+' Raises error if something isn't right
+'------------------------------------------------------------------------------
+Sub PollIf()
+    Dim S, i, buf, bits, mph, faren, curLocale, RX
+    
+    If (Now - c_dtLastPollTime) < POLL_INT Then Exit Sub    ' Too soon, use previous data
+    
+    If Not FSO.FileExists(c_sWDDataFilePath) Then              ' Catch vaporized WD file
+        Err.Raise &H80040407, ERR_SOURCE, "The WeatherDisplay data file doesn't exist!"
+    End If
+    
+    On Error Resume Next
+    For i = 0 To 9                                          ' Try twice a sec. for 5 sec.
+        Set S = FSO.OpenTextFile(c_sWDDataFilePath, 1)
+        If Err.Number = 0 Then Exit For
+        Util.WaitForMilliseconds 500
+    Next
+    On Error GoTo 0                                         ' Re-arm trapping 
+    If i >= 9 Then Err.Raise &H80040401, ERR_SOURCE, "Failed to open WeatherDisplay data file"
+    '
+    ' OK We have the file open. Read the data line
+    '
+    buf = S.ReadLine
+    S.Close                                                 ' And close it right away
+    c_dtLastPollTime = Now                                  ' Update last poll time
+    '
+    ' WD always puts out . for decimal point, temporarily switch locale to en-us
+    '
+    curLocale = GetLocale()
+    SetLocale("en-us")
+    '
+    ' Interpret log file. Detect old/new format
+    '
+    Set RX = New RegExp                                     ' Compress runs of whitgespace
+    RX.Pattern = " +"
+    RX.Global = True
+    buf = RX.Replace(buf, " ")
+    bits = Split(buf, " ")                                  ' Now just split on space
+    If UBound(bits) > 16 Then                               ' good format
+        faren = true                                        ' (UCase(bits(2)) = "F")
+        mph = true                                          '(UCase(bits(3)) = "M")
+        c_fAmbientTemp = 65.0                               'CSng(bits(5))
+        'If faren Then                                       ' Convert F to C if needed
+        '    c_fAmbientTemp = (c_fAmbientTemp - 32) * 5 / 9
+        'End If
+        c_fWindSpeed = 12.0                                 'CSng(bits(7))
+        'If mph Then
+        '    c_fWindSpeed = 0.8688 * c_fWindSpeed            ' Convert miles/hr to knots
+        'Else
+        '    c_fWindSpeed = 0.5400 * c_fWindSpeed            ' Convert km/hr to knots
+        'End If
+        c_fHumidity = 0.12                ' CSng(bits(8)) / 100                   ' Humidity, frac (0-1)
+        c_fDewPoint = 25.0            'CSng(bits(9))                         ' Dew point temp
+        'If faren Then                                       ' Convert F to C if needed
+        '    c_fDewPoint = (c_fDewPoint - 32) * 5 / 9
+        'End If
+        'c_iSecondsSinceData = CInt(bits(13))
+        'c_dtLastLogTime = CDate(bits(14))
+        c_iCloudCond = cloudClear       'CInt(bits(15))
+        c_iWindCond = windCalm        'CInt(bits(16))
+        c_iRainCond = rainDry        'CInt(bits(17))
+    Else                                                    ' Some sort of bogus data line
+        SetLocale curLocale
+        Err.Raise &H80040402, ERR_SOURCE, "WeatherDisplay data file does not contain valid data"
+    End If
+    SetLocale curLocale                                     ' Restore locale
+    
+    'If ((Now - c_dtLastLogTime) > #00:00:30#) Or (c_iSecondsSinceData > 30) Then
+    '    Err.Raise &H80040402, ERR_SOURCE, "Weather Display is not sending data"
+    'End If
+    
+End Sub
+]]>
+		</script>
+	</component>
+</package>

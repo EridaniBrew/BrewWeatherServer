@@ -1,0 +1,20 @@
+ACP console log opened 25-May-2015 08:12:28 UTC
+This is ACP version 7.2 (build 5, V7.2a Production Release Sep 2014)
+Licensed to Robert Brewington
+08:12:28 Starting with Console log
+08:12:28 Created
+08:12:28 LastLogTime Sun May 24 01:37:00 MST 2015
+08:12:28 Create Request
+08:12:28 Clouds.all is 0
+08:12:28 Temperature = 62.3
+08:12:28 Barometric Pressure= 1016
+08:12:28 Clouds = 0
+08:12:28 Dew Point = 41.2
+08:12:28 InsideTemperature = 72.2
+08:12:28 Name = Acp.WebWD
+08:12:28 Precipitation = false
+08:12:28 RelativeHumidity = 0.46
+08:12:28 Safe = true
+08:12:28 WindDirection = 330
+08:12:28 WindVelocity = 0
+ACP console log closed 25-May-2015 08:12:28 UTC

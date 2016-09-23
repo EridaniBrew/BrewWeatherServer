@@ -1,0 +1,4 @@
+05/24/15
+Time Wind Dir Wind Spd Hum In Humidity Temp In Temp Raw Barom Temp Ch 1 Hum Ch 1 Temp Ch 2 Hum Ch 2 Temp Ch 3 Hum Ch 3 Dew Point RainRate
+° mph % % °F °F in °F % °F % °F % °F in/hr
+01:37 AM 330 0.0 27 46 72.2 62.3 101.6 0.0 0 0.0 0 0.0 0 41.2 0.00

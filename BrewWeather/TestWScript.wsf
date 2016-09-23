@@ -1,0 +1,15 @@
+﻿<job id="main">
+	<script language="JScript">
+	    var BW ;
+	    BW = new ActiveXObject("BrewGemini");
+	    BW.Temperature = 50.0;
+	    WScript.Echo("Temperature is " );
+	</script>
+	
+    <script language="VBScript">
+	    dim BW 
+	    BW = CreateObject("BrewGemini")
+	    BW.Temperature = 50.0
+		WScript.Echo "Temp is " & BW.Temperature
+	</script>
+</job>
